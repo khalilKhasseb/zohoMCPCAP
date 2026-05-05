@@ -1,0 +1,6 @@
+# Enforce LF for files that must run on Unix shells (bash on macOS aborts with
+# `$'\r'` syntax errors when shell scripts have CRLF endings).
+*.sh        text eol=lf
+
+# PowerShell scripts are Windows-native — keep CRLF.
+*.ps1       text eol=crlf

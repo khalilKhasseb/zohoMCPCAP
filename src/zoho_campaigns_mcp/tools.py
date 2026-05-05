@@ -131,36 +131,50 @@ def register_tools(server: Server, api: ZohoCampaignsAPI) -> None:
             ),
             Tool(
                 name="create_mailing_list",
-                description="Create a new mailing list, optionally with initial contacts.",
+                description=(
+                    "Create a new mailing list with 1-10 initial email contacts. "
+                    "Zoho requires at least one email and accepts at most 10 — "
+                    "use add_contacts_bulk afterwards to add the rest."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "listname": {"type": "string", "description": "Name for the new mailing list"},
-                        "contacts": {
+                        "emails": {
                             "type": "array",
-                            "description": "Optional list of initial contacts. Each contact is an object with 'Contact Email' (required), 'First Name', 'Last Name'.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "Contact Email": {"type": "string"},
-                                    "First Name": {"type": "string"},
-                                    "Last Name": {"type": "string"},
-                                },
-                                "required": ["Contact Email"],
-                            },
+                            "description": "1-10 contact email addresses to seed the list. Required.",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "maxItems": 10,
+                        },
+                        "signupform": {
+                            "type": "string",
+                            "description": "'public' for an open signup form (default), 'private' for admin-only.",
+                            "enum": ["public", "private"],
+                            "default": "public",
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Optional list description.",
                         },
                     },
-                    "required": ["listname"],
+                    "required": ["listname", "emails"],
                 },
             ),
             Tool(
                 name="update_mailing_list",
-                description="Rename a mailing list.",
+                description="Rename a mailing list. Zoho requires the signup-form mode on every update.",
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "listkey": {"type": "string", "description": "The list key to update (get from list_mailing_lists)"},
                         "new_name": {"type": "string", "description": "New name for the mailing list"},
+                        "signupform": {
+                            "type": "string",
+                            "description": "'public' (open signup form, default) or 'private' (admin-only).",
+                            "enum": ["public", "private"],
+                            "default": "public",
+                        },
                     },
                     "required": ["listkey", "new_name"],
                 },
@@ -227,26 +241,25 @@ def register_tools(server: Server, api: ZohoCampaignsAPI) -> None:
             ),
             Tool(
                 name="add_contacts_bulk",
-                description="Add multiple contacts to a mailing list at once.",
+                description=(
+                    "Add up to 10 email contacts to a mailing list at once. "
+                    "Zoho's bulk endpoint only supports email addresses (no first/last name) "
+                    "and is capped at 10 per call — for >10, call this tool repeatedly. "
+                    "For richer contact data (names, custom fields), use add_subscriber per contact."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
                         "listkey": {"type": "string", "description": "The mailing list key"},
-                        "contacts": {
+                        "emails": {
                             "type": "array",
-                            "description": "List of contacts. Each must have 'Contact Email'; optionally 'First Name', 'Last Name'.",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "Contact Email": {"type": "string"},
-                                    "First Name": {"type": "string"},
-                                    "Last Name": {"type": "string"},
-                                },
-                                "required": ["Contact Email"],
-                            },
+                            "description": "1-10 contact email addresses to add.",
+                            "items": {"type": "string"},
+                            "minItems": 1,
+                            "maxItems": 10,
                         },
                     },
-                    "required": ["listkey", "contacts"],
+                    "required": ["listkey", "emails"],
                 },
             ),
             Tool(
@@ -255,6 +268,68 @@ def register_tools(server: Server, api: ZohoCampaignsAPI) -> None:
                 inputSchema={
                     "type": "object",
                     "properties": {},
+                },
+            ),
+            Tool(
+                name="list_tags",
+                description="List every tag in the account, with owner, color, description, and tagged-contact counts.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {},
+                },
+            ),
+            Tool(
+                name="create_tag",
+                description="Create a new tag. Tags are account-wide and can later be attached to contacts.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tag_name": {"type": "string", "description": "Display name for the tag."},
+                        "description": {"type": "string", "description": "Optional short description."},
+                        "color": {
+                            "type": "string",
+                            "description": "Optional hex color code (e.g. '#ec676c'). Zoho defaults to '#ec676c' if omitted.",
+                        },
+                    },
+                    "required": ["tag_name"],
+                },
+            ),
+            Tool(
+                name="delete_tag",
+                description=(
+                    "Delete a tag by name. Irreversible: the tag is removed account-wide "
+                    "and dissociated from every contact it was attached to."
+                ),
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tag_name": {"type": "string", "description": "The exact tag name to delete."},
+                    },
+                    "required": ["tag_name"],
+                },
+            ),
+            Tool(
+                name="tag_contact",
+                description="Attach an existing tag to a contact, identified by email.",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tag_name": {"type": "string", "description": "The tag to attach (must already exist — use create_tag first)."},
+                        "email": {"type": "string", "description": "Contact's email address."},
+                    },
+                    "required": ["tag_name", "email"],
+                },
+            ),
+            Tool(
+                name="untag_contact",
+                description="Remove a tag from a contact (the tag itself stays — only the association is dropped).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "tag_name": {"type": "string", "description": "The tag to remove from the contact."},
+                        "email": {"type": "string", "description": "Contact's email address."},
+                    },
+                    "required": ["tag_name", "email"],
                 },
             ),
         ]
@@ -318,7 +393,9 @@ def register_tools(server: Server, api: ZohoCampaignsAPI) -> None:
             elif name == "create_mailing_list":
                 result = api.create_list_with_contacts(
                     listname=arguments["listname"],
-                    contacts=arguments.get("contacts"),
+                    emails=arguments["emails"],
+                    signupform=arguments.get("signupform", "public"),
+                    description=arguments.get("description"),
                 )
                 return _ok(result)
 
@@ -326,6 +403,7 @@ def register_tools(server: Server, api: ZohoCampaignsAPI) -> None:
                 result = api.update_list_details(
                     listkey=arguments["listkey"],
                     new_name=arguments["new_name"],
+                    signupform=arguments.get("signupform", "public"),
                 )
                 return _ok(result)
 
@@ -364,7 +442,7 @@ def register_tools(server: Server, api: ZohoCampaignsAPI) -> None:
             elif name == "add_contacts_bulk":
                 result = api.add_contacts_to_list(
                     listkey=arguments["listkey"],
-                    contacts=arguments["contacts"],
+                    emails=arguments["emails"],
                 )
                 return _ok(result)
 
@@ -372,10 +450,42 @@ def register_tools(server: Server, api: ZohoCampaignsAPI) -> None:
                 result = api.get_contact_fields()
                 return _ok(result)
 
+            elif name == "list_tags":
+                result = api.get_all_tags()
+                return _ok(result)
+
+            elif name == "create_tag":
+                result = api.create_tag(
+                    tag_name=arguments["tag_name"],
+                    description=arguments.get("description"),
+                    color=arguments.get("color"),
+                )
+                return _ok(result)
+
+            elif name == "delete_tag":
+                result = api.delete_tag(tag_name=arguments["tag_name"])
+                return _ok(result)
+
+            elif name == "tag_contact":
+                result = api.associate_tag(
+                    tag_name=arguments["tag_name"],
+                    email=arguments["email"],
+                )
+                return _ok(result)
+
+            elif name == "untag_contact":
+                result = api.deassociate_tag(
+                    tag_name=arguments["tag_name"],
+                    email=arguments["email"],
+                )
+                return _ok(result)
+
             else:
                 return _err(f"Unknown tool: {name}")
 
         except ZohoCampaignsError as e:
+            return _err(str(e))
+        except ValueError as e:
             return _err(str(e))
         except KeyError as e:
             return _err(f"Missing required argument: {e}")

@@ -8,10 +8,12 @@ silently — you never need to log in again.
 
 import json
 import os
+import socket
 import sys
 import time
 import urllib.parse
 import webbrowser
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from threading import Event
@@ -28,8 +30,11 @@ TOKEN_ENDPOINT = f"{ZOHO_ACCOUNTS_URL}/oauth/v2/token"
 AUTH_ENDPOINT = f"{ZOHO_ACCOUNTS_URL}/oauth/v2/auth"
 
 SCOPES = "ZohoCampaigns.campaign.ALL,ZohoCampaigns.contact.ALL"
-REDIRECT_URI = "http://localhost:8080/callback"
-CALLBACK_PORT = 8080
+
+# Tried in order. 8080 is the canonical default; the others are fallbacks for
+# Windows/WSL/Docker environments where 8080 is often already taken or relayed.
+CALLBACK_PORTS = [8080, 8090, 8765, 53682, 49152, 8181]
+DEFAULT_CALLBACK_PORT = CALLBACK_PORTS[0]
 
 TOKEN_DIR = Path.home() / ".zoho_campaigns_mcp"
 TOKEN_FILE = TOKEN_DIR / "tokens.json"
@@ -105,6 +110,18 @@ class _CallbackHandler(BaseHTTPRequestHandler):
 # OAuth flow
 # ---------------------------------------------------------------------------
 
+def _find_free_callback_port() -> Optional[int]:
+    """Return the first port in CALLBACK_PORTS we can bind on localhost, or None."""
+    for port in CALLBACK_PORTS:
+        try:
+            with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+                s.bind(("localhost", port))
+        except OSError:
+            continue
+        return port
+    return None
+
+
 def run_oauth_flow(client_id: str, client_secret: str) -> dict:
     """
     Opens the browser for Zoho login, waits for the callback, and returns
@@ -115,19 +132,56 @@ def run_oauth_flow(client_id: str, client_secret: str) -> dict:
     _auth_error = None
     _done_event = Event()
 
+    # Pick a callback port. On Windows with WSL/Docker, port 8080 is often
+    # held by another service (or mirrored from WSL by wslrelay.exe), which
+    # produces WinError 10013. Fall back to other ports if 8080 is unavailable.
+    port = _find_free_callback_port()
+    if port is None:
+        print(
+            "\n  Could not bind any of the OAuth callback ports: "
+            + ", ".join(str(p) for p in CALLBACK_PORTS)
+        )
+        print("  These ports are all in use on this machine. Either:")
+        print("    1. Stop the application using one of them, or")
+        print("    2. Restart WSL with 'wsl --shutdown' (Windows + WSL users), or")
+        print("    3. Reboot and re-run setup.")
+        sys.exit(1)
+
+    redirect_uri = f"http://localhost:{port}/callback"
+
+    if port != DEFAULT_CALLBACK_PORT:
+        print(
+            f"\n  Port {DEFAULT_CALLBACK_PORT} is unavailable on this machine "
+            f"(common on Windows with WSL/Docker)."
+        )
+        print(f"  Using port {port} instead. The redirect URI will be:")
+        print(f"\n     {redirect_uri}\n")
+        print("  IMPORTANT: Add that URL as an Authorized Redirect URI in your")
+        print("  Zoho client (https://api-console.zoho.com -> click your client")
+        print("  -> Client Details -> 'Authorized Redirect URIs'), then save it.")
+        try:
+            input("\n  Press ENTER once you have added that redirect URI in Zoho...")
+        except EOFError:
+            pass
+
     # Build authorization URL
     auth_params = {
         "response_type": "code",
         "client_id": client_id,
         "scope": SCOPES,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "access_type": "offline",
         "prompt": "consent",
     }
     auth_url = AUTH_ENDPOINT + "?" + urllib.parse.urlencode(auth_params)
 
     # Start local callback server
-    server = HTTPServer(("localhost", CALLBACK_PORT), _CallbackHandler)
+    try:
+        server = HTTPServer(("localhost", port), _CallbackHandler)
+    except OSError as e:
+        print(f"\n  Could not start the local callback server on port {port}: {e}")
+        print("  Try closing other apps that use that port, then re-run setup.")
+        sys.exit(1)
     server.timeout = 1  # 1-second poll so we can check _done_event
 
     print("\n  Opening your browser to log in to Zoho...")
@@ -157,7 +211,7 @@ def run_oauth_flow(client_id: str, client_secret: str) -> dict:
         "grant_type": "authorization_code",
         "client_id": client_id,
         "client_secret": client_secret,
-        "redirect_uri": REDIRECT_URI,
+        "redirect_uri": redirect_uri,
         "code": _auth_code,
     }, timeout=30)
 

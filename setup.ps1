@@ -150,46 +150,27 @@ Write-Ok "Connected to Zoho Campaigns!"
 Write-Host ""
 Write-Info "Configuring Claude Desktop..."
 
-$ClaudeConfigDir  = "$env:APPDATA\Claude"
-$ClaudeConfigFile = "$ClaudeConfigDir\claude_desktop_config.json"
 $UvPath = (Get-Command uv -ErrorAction SilentlyContinue).Source
 if (-not $UvPath) { $UvPath = "uv" }
 
-# Build the server config object
-$ServerConfig = [ordered]@{
-    command = $UvPath
-    args    = @("run", "--project", $ScriptDir, "--python", "3.11", "zoho-campaigns-mcp")
-    env     = [ordered]@{
-        ZOHO_CLIENT_ID     = $ClientId
-        ZOHO_CLIENT_SECRET = $ClientSecret
-    }
-}
-
-if (-not (Test-Path $ClaudeConfigDir)) {
-    New-Item -ItemType Directory -Path $ClaudeConfigDir -Force | Out-Null
-}
-
-if (-not (Test-Path $ClaudeConfigFile)) {
-    $Config = [ordered]@{ mcpServers = [ordered]@{ "zoho-campaigns" = $ServerConfig } }
-    $Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ClaudeConfigFile -Encoding UTF8
-    Write-Ok "Created Claude Desktop config"
+# JSON merge in pure PowerShell is fragile (BOM, PSCustomObject vs hashtable,
+# property ordering). Delegate to a Python helper that reads tokens.json and
+# writes claude_desktop_config.json deterministically.
+& $UvCmd run --project $ScriptDir --python 3.11 python -m zoho_campaigns_mcp.configure_claude $UvPath $ScriptDir
+if ($LASTEXITCODE -ne 0) {
+    Write-Warn "Could not update Claude Desktop config automatically."
+    Write-Host ""
+    Write-Host "  You can finish manually by editing:"
+    Write-Host "    $env:APPDATA\Claude\claude_desktop_config.json"
+    Write-Host "  and adding under 'mcpServers':"
+    Write-Host ""
+    Write-Host "    `"zoho-campaigns`": {"
+    Write-Host "      `"command`": `"$UvPath`","
+    Write-Host "      `"args`": [`"run`", `"--project`", `"$ScriptDir`", `"--python`", `"3.11`", `"zoho-campaigns-mcp`"],"
+    Write-Host "      `"env`": { `"ZOHO_CLIENT_ID`": `"<your id>`", `"ZOHO_CLIENT_SECRET`": `"<your secret>`" }"
+    Write-Host "    }"
 } else {
-    try {
-        $Config = Get-Content $ClaudeConfigFile -Raw | ConvertFrom-Json
-        if (-not $Config.PSObject.Properties["mcpServers"]) {
-            $Config | Add-Member -NotePropertyName "mcpServers" -NotePropertyValue ([ordered]@{})
-        }
-        $Config.mcpServers | Add-Member -NotePropertyName "zoho-campaigns" -NotePropertyValue $ServerConfig -Force
-        $Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ClaudeConfigFile -Encoding UTF8
-        Write-Ok "Updated Claude Desktop config"
-    } catch {
-        Write-Warn "Could not update Claude Desktop config automatically: $_"
-        Write-Host ""
-        Write-Host "  Please manually add this to: $ClaudeConfigFile"
-        Write-Host "  (under the 'mcpServers' key):"
-        Write-Host ""
-        $ServerConfig | ConvertTo-Json -Depth 5 | Write-Host
-    }
+    Write-Ok "Claude Desktop config updated"
 }
 
 # ── Done! ─────────────────────────────────────────────────────────────────────

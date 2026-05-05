@@ -42,23 +42,28 @@ cd "$SCRIPT_DIR"
 # ── Step 1: Check Python ──────────────────────────────────────────────────────
 echo -e "${BOLD}  Step 1/5 — Checking Python${RESET}"
 
-# Find any Python 3 for running helper scripts (config file editing etc.)
+# Look for an explicitly-versioned python3.X. We avoid bare `python3` because
+# on macOS Catalina (2012-iMac territory) without Xcode Command Line Tools
+# installed, /usr/bin/python3 is a stub that pops up a blocking GUI install
+# dialog the moment you invoke it. uv will pin its own Python 3.11 anyway,
+# so we don't actually need a system Python — this check is informational.
 PYTHON=""
-for cmd in python3.12 python3.11 python3.10 python3.9 python3.8 python3; do
+for cmd in python3.13 python3.12 python3.11 python3.10 python3.9 python3.8; do
   if command -v "$cmd" &>/dev/null; then
     PYTHON="$cmd"
     break
   fi
 done
 
-if [[ -z "$PYTHON" ]]; then
-  warn "No Python found at all. uv will install it automatically in Step 2."
-fi
-
 if [[ -n "$PYTHON" ]]; then
-  ok "Python found: $("$PYTHON" --version) (uv will use Python 3.11 for the server)"
+  PY_VERSION="$("$PYTHON" --version 2>/dev/null || true)"
+  if [[ -n "$PY_VERSION" ]]; then
+    ok "Python found: $PY_VERSION (uv will use its own Python 3.11 for the server)"
+  else
+    ok "uv will install Python 3.11 (no usable system Python detected)"
+  fi
 else
-  ok "uv will download Python 3.11 automatically"
+  ok "uv will install Python 3.11 automatically (no system Python needed)"
 fi
 
 # ── Step 2: Install uv ───────────────────────────────────────────────────────
@@ -153,68 +158,27 @@ ok "Connected to Zoho Campaigns!"
 echo ""
 info "Configuring Claude Desktop..."
 
-CLAUDE_CONFIG_DIR="$HOME/Library/Application Support/Claude"
-CLAUDE_CONFIG_FILE="$CLAUDE_CONFIG_DIR/claude_desktop_config.json"
 UV_PATH="$(command -v uv)"
 
-# Find the installed zoho-campaigns-mcp script
-MCP_SCRIPT="$SCRIPT_DIR/.venv/bin/zoho-campaigns-mcp"
-if [[ ! -f "$MCP_SCRIPT" ]]; then
-  # uv may place it in a different location
-  MCP_SCRIPT="$("$UV_CMD" run --project "$SCRIPT_DIR" which zoho-campaigns-mcp 2>/dev/null || true)"
-fi
-
-# Build the server config entry as a JSON fragment
-SERVER_ENTRY=$(cat <<EOF
-{
-  "command": "$UV_PATH",
-  "args": ["run", "--project", "$SCRIPT_DIR", "--python", "3.11", "zoho-campaigns-mcp"],
-  "env": {
-    "ZOHO_CLIENT_ID": "$CLIENT_ID",
-    "ZOHO_CLIENT_SECRET": "$CLIENT_SECRET"
-  }
-}
-EOF
-)
-
-# Create config dir if needed
-mkdir -p "$CLAUDE_CONFIG_DIR"
-
-if [[ ! -f "$CLAUDE_CONFIG_FILE" ]]; then
-  # No config file yet — create a fresh one
-  cat > "$CLAUDE_CONFIG_FILE" <<EOF
-{
-  "mcpServers": {
-    "zoho-campaigns": $SERVER_ENTRY
-  }
-}
-EOF
-  ok "Created Claude Desktop config"
+# JSON merge in shell + heredoc-Python is fragile (quoting, BOMs, system python
+# being a Catalina/CLT stub). Delegate to the configure_claude module, which
+# reads tokens.json on disk and writes claude_desktop_config.json
+# deterministically. We call it through uv's pinned Python 3.11 so we never
+# rely on whatever /usr/bin/python3 happens to be.
+if "$UV_CMD" run --project "$SCRIPT_DIR" --python 3.11 \
+      python -m zoho_campaigns_mcp.configure_claude "$UV_PATH" "$SCRIPT_DIR"; then
+  ok "Claude Desktop config updated"
 else
-  # Config file exists — merge in our server entry using Python
-  # Use uv-managed Python 3.11 if system Python is absent or too old
-  PY_FOR_JSON="$PYTHON"
-  if [[ -z "$PY_FOR_JSON" ]]; then
-    PY_FOR_JSON="$("$UV_CMD" run --python 3.11 --project "$SCRIPT_DIR" which python)"
-  fi
-  "$PY_FOR_JSON" - <<PYEOF
-import json, sys
-
-config_file = "$CLAUDE_CONFIG_FILE"
-with open(config_file) as f:
-    config = json.load(f)
-
-if "mcpServers" not in config:
-    config["mcpServers"] = {}
-
-config["mcpServers"]["zoho-campaigns"] = json.loads('''$SERVER_ENTRY''')
-
-with open(config_file, "w") as f:
-    json.dump(config, f, indent=2)
-
-print("  Config updated successfully")
-PYEOF
-  ok "Updated Claude Desktop config"
+  warn "Could not update Claude Desktop config automatically."
+  echo ""
+  echo "  Add this manually under 'mcpServers' in:"
+  echo "    $HOME/Library/Application Support/Claude/claude_desktop_config.json"
+  echo ""
+  echo "    \"zoho-campaigns\": {"
+  echo "      \"command\": \"$UV_PATH\","
+  echo "      \"args\": [\"run\", \"--project\", \"$SCRIPT_DIR\", \"--python\", \"3.11\", \"zoho-campaigns-mcp\"],"
+  echo "      \"env\": { \"ZOHO_CLIENT_ID\": \"<your id>\", \"ZOHO_CLIENT_SECRET\": \"<your secret>\" }"
+  echo "    }"
 fi
 
 # ── Done! ────────────────────────────────────────────────────────────────────

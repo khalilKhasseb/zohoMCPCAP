@@ -79,8 +79,10 @@ Run `bash setup.sh` again to re-authenticate.
 **The browser didn't open automatically**
 The script will print a URL. Copy and paste it into your browser manually.
 
-**Port 8080 is already in use**
-Another app is using that port. Quit any local web servers you have running, then re-run `bash setup.sh`.
+**Port 8080 is already in use** (or `WinError 10013` on Windows)
+Setup will automatically fall back to another port (8090, 8765, 53682, …) if 8080 is taken — common on Windows when WSL or Docker is running. When that happens, the script prints the redirect URI it picked (e.g. `http://localhost:8090/callback`) and waits for you to add it as an **Authorized Redirect URI** in your Zoho client at <https://api-console.zoho.com>. Add it, save, then press ENTER to continue.
+
+If you'd rather free port 8080 instead, on Windows run `wsl --shutdown` in PowerShell (kills WSL relays), or stop whatever Windows service is bound to it, then re-run setup.
 
 **Claude doesn't show Zoho tools after restart**
 Make sure you fully quit Claude Desktop (right-click the Dock icon → Quit) and reopen it — not just close the window.
@@ -105,8 +107,13 @@ Make sure you fully quit Claude Desktop (right-click the Dock icon → Quit) and
 | `get_list_subscribers` | See who's on a list |
 | `add_subscriber` | Add one contact to a list |
 | `unsubscribe_contact` | Remove a contact from a list |
-| `add_contacts_bulk` | Add many contacts at once |
+| `add_contacts_bulk` | Add up to 10 contacts at once (email-only) |
 | `get_contact_fields` | See all available contact fields |
+| `list_tags` | List every tag in the account |
+| `create_tag` | Create a new tag (with optional color and description) |
+| `delete_tag` | Delete a tag account-wide |
+| `tag_contact` | Attach a tag to a contact by email |
+| `untag_contact` | Remove a tag from a contact |
 
 ---
 
