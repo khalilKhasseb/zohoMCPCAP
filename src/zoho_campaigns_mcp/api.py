@@ -234,10 +234,16 @@ class ZohoCampaignsAPI:
         Rename a mailing list. Zoho requires `newlistname` (not `listname`)
         and `signupform` ('public' or 'private') — every parameter goes in
         the URL query string.
+
+        HTTP method note: Zoho's docs page header for updatelistdetails reads
+        "Request Type: POST", but the side nav on the same page lists it as
+        GET, and the live server returns INVALID_METHOD on POST. Same quirk
+        as deletemailinglist (docs say POST, server only accepts GET). Use
+        GET — confirmed empirically.
         """
         if signupform not in ("public", "private"):
             raise ValueError("signupform must be 'public' or 'private'.")
-        return self._post("updatelistdetails", params={
+        return self._get("updatelistdetails", {
             "listkey": listkey,
             "newlistname": new_name,
             "signupform": signupform,
