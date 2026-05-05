@@ -42,32 +42,24 @@ cd "$SCRIPT_DIR"
 # ── Step 1: Check Python ──────────────────────────────────────────────────────
 echo -e "${BOLD}  Step 1/5 — Checking Python${RESET}"
 
+# Find any Python 3 for running helper scripts (config file editing etc.)
 PYTHON=""
 for cmd in python3.12 python3.11 python3.10 python3.9 python3.8 python3; do
   if command -v "$cmd" &>/dev/null; then
-    VERSION=$("$cmd" --version 2>&1 | awk '{print $2}')
-    MAJOR=$(echo "$VERSION" | cut -d. -f1)
-    MINOR=$(echo "$VERSION" | cut -d. -f2)
-    if [[ "$MAJOR" -ge 3 && "$MINOR" -ge 8 ]]; then
-      PYTHON="$cmd"
-      break
-    fi
+    PYTHON="$cmd"
+    break
   fi
 done
 
 if [[ -z "$PYTHON" ]]; then
-  warn "Python 3.8 or newer is required but was not found."
-  echo ""
-  echo "  Please install Python:"
-  echo "  1. Open your browser and go to: https://www.python.org/downloads/"
-  echo "  2. Click the big yellow 'Download Python' button"
-  echo "  3. Open the downloaded file and follow the installer"
-  echo "  4. Come back here and run: bash setup.sh"
-  echo ""
-  die "Python not found. Please install it and re-run this script."
+  warn "No Python found at all. uv will install it automatically in Step 2."
 fi
 
-ok "Python found: $("$PYTHON" --version)"
+if [[ -n "$PYTHON" ]]; then
+  ok "Python found: $("$PYTHON" --version) (uv will use Python 3.11 for the server)"
+else
+  ok "uv will download Python 3.11 automatically"
+fi
 
 # ── Step 2: Install uv ───────────────────────────────────────────────────────
 echo ""
@@ -92,9 +84,10 @@ fi
 # ── Step 3: Install dependencies ─────────────────────────────────────────────
 echo ""
 echo -e "${BOLD}  Step 3/5 — Installing dependencies${RESET}"
-info "This downloads the required Python packages..."
+info "This downloads Python 3.11 and required packages (first run may take ~1 minute)..."
 
-"$UV_CMD" sync --project "$SCRIPT_DIR" 2>&1 | sed 's/^/    /'
+"$UV_CMD" python install 3.11 2>&1 | sed 's/^/    /'
+"$UV_CMD" sync --project "$SCRIPT_DIR" --python 3.11 2>&1 | sed 's/^/    /'
 ok "Dependencies installed"
 
 # ── Step 4: Zoho API client credentials ──────────────────────────────────────
@@ -152,7 +145,7 @@ info "Your browser will open for Zoho login. Log in and click 'Accept'."
 info "The script will finish automatically after you approve access."
 echo ""
 
-"$UV_CMD" run --project "$SCRIPT_DIR" python -m zoho_campaigns_mcp.auth "$CLIENT_ID" "$CLIENT_SECRET"
+"$UV_CMD" run --project "$SCRIPT_DIR" --python 3.11 python -m zoho_campaigns_mcp.auth "$CLIENT_ID" "$CLIENT_SECRET"
 
 ok "Connected to Zoho Campaigns!"
 
@@ -175,7 +168,7 @@ fi
 SERVER_ENTRY=$(cat <<EOF
 {
   "command": "$UV_PATH",
-  "args": ["run", "--project", "$SCRIPT_DIR", "zoho-campaigns-mcp"],
+  "args": ["run", "--project", "$SCRIPT_DIR", "--python", "3.11", "zoho-campaigns-mcp"],
   "env": {
     "ZOHO_CLIENT_ID": "$CLIENT_ID",
     "ZOHO_CLIENT_SECRET": "$CLIENT_SECRET"
@@ -199,7 +192,12 @@ EOF
   ok "Created Claude Desktop config"
 else
   # Config file exists — merge in our server entry using Python
-  "$PYTHON" - <<PYEOF
+  # Use uv-managed Python 3.11 if system Python is absent or too old
+  PY_FOR_JSON="$PYTHON"
+  if [[ -z "$PY_FOR_JSON" ]]; then
+    PY_FOR_JSON="$("$UV_CMD" run --python 3.11 --project "$SCRIPT_DIR" which python)"
+  fi
+  "$PY_FOR_JSON" - <<PYEOF
 import json, sys
 
 config_file = "$CLAUDE_CONFIG_FILE"

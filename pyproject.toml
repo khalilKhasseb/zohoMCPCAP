@@ -2,7 +2,7 @@
 name = "zoho-campaigns-mcp"
 version = "0.1.0"
 description = "MCP server for Zoho Campaigns — manage campaigns, contacts, and mailing lists"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = [
     "mcp[cli]>=1.0.0",
     "requests>=2.31.0",
