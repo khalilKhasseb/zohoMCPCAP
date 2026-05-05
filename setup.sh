@@ -39,6 +39,33 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# ── Pre-flight: Claude Desktop installed? ────────────────────────────────────
+# Not a hard block (the friend may install Claude after this script), but a
+# clear warning beats a silent config-orphan they can't diagnose later.
+CLAUDE_APP_FOUND=""
+for path in "/Applications/Claude.app" "$HOME/Applications/Claude.app"; do
+  if [[ -d "$path" ]]; then
+    CLAUDE_APP_FOUND="$path"
+    break
+  fi
+done
+
+if [[ -z "$CLAUDE_APP_FOUND" ]]; then
+  warn "Claude Desktop does not appear to be installed yet."
+  echo "    Download it from: https://claude.ai/download"
+  echo "    The script will continue — install Claude before the final step."
+  echo ""
+fi
+
+# ── Pre-flight: basic internet reachability ──────────────────────────────────
+# A bare 'curl | sh' for uv just dies silently with set -euo pipefail when
+# the network is down. Catch it early with a friendly message.
+if ! command -v uv &>/dev/null; then
+  if ! curl -fsSI --max-time 5 https://astral.sh/uv/install.sh >/dev/null 2>&1; then
+    die "Cannot reach the internet (or astral.sh is blocked). Connect to Wi-Fi or Ethernet and re-run this script."
+  fi
+fi
+
 # ── Step 1: Check Python ──────────────────────────────────────────────────────
 echo -e "${BOLD}  Step 1/5 — Checking Python${RESET}"
 
@@ -75,14 +102,22 @@ if command -v uv &>/dev/null; then
   UV_CMD="uv"
 else
   info "Installing uv..."
+  # Wrap the install pipe in an explicit success-check so a network blip
+  # produces a clear message instead of a silent set -e abort.
+  set +e
   curl -LsSf https://astral.sh/uv/install.sh | sh
+  INSTALL_RC=$?
+  set -e
   # Add to current shell path
   export PATH="$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
+  if [[ $INSTALL_RC -ne 0 ]]; then
+    die "Could not download uv. Please check your internet connection (Wi-Fi or Ethernet) and try again."
+  fi
   if command -v uv &>/dev/null; then
     UV_CMD="uv"
     ok "uv installed successfully"
   else
-    die "uv installation failed. Please check your internet connection and try again."
+    die "uv installed but isn't on PATH yet. Please close this Terminal window, open a new one, and re-run: bash setup.sh"
   fi
 fi
 
@@ -130,6 +165,9 @@ while true; do
 done
 
 # Read Client Secret (masked)
+echo ""
+info "Heads up: the next prompt will hide what you type for security."
+info "Just paste your Client Secret and press ENTER — you won't see characters appear."
 while true; do
   read -rsp "  Paste your Client Secret here and press ENTER: " CLIENT_SECRET
   echo ""
@@ -187,12 +225,36 @@ echo -e "${BOLD}${GREEN}  ══════════════════
 echo -e "${BOLD}${GREEN}    Setup complete!                          ${RESET}"
 echo -e "${BOLD}${GREEN}  ══════════════════════════════════════════${RESET}"
 echo ""
-echo "  What to do next:"
-echo "  1. Quit Claude Desktop completely (if it's open)"
-echo "  2. Reopen Claude Desktop"
-echo "  3. Start a new conversation and try:"
-echo "       'List my Zoho Campaigns mailing lists'"
-echo "       'Show me my recent campaigns'"
+
+# Re-check now in case the friend installed Claude Desktop while OAuth ran.
+if [[ -z "$CLAUDE_APP_FOUND" ]]; then
+  for path in "/Applications/Claude.app" "$HOME/Applications/Claude.app"; do
+    if [[ -d "$path" ]]; then
+      CLAUDE_APP_FOUND="$path"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$CLAUDE_APP_FOUND" ]]; then
+  echo "  IMPORTANT: Claude Desktop is not installed yet."
+  echo ""
+  echo "  Next steps:"
+  echo "  1. Download Claude Desktop:  https://claude.ai/download"
+  echo "  2. Install and open it once."
+  echo "  3. Quit Claude Desktop completely (right-click Dock icon → Quit)."
+  echo "  4. Reopen Claude Desktop."
+  echo "  5. Start a new conversation and try:"
+  echo "       'List my Zoho Campaigns mailing lists'"
+else
+  echo "  What to do next:"
+  echo "  1. Quit Claude Desktop completely (right-click Dock icon → Quit, not just close the window)."
+  echo "  2. Reopen Claude Desktop."
+  echo "  3. Start a new conversation and try:"
+  echo "       'List my Zoho Campaigns mailing lists'"
+  echo "       'Show me my recent campaigns'"
+fi
+
 echo ""
 echo "  If something goes wrong, re-run this script: bash setup.sh"
 echo ""

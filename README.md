@@ -79,6 +79,15 @@ Run `bash setup.sh` again to re-authenticate.
 **The browser didn't open automatically**
 The script will print a URL. Copy and paste it into your browser manually.
 
+**"Claude Desktop does not appear to be installed yet" (Mac)**
+The setup script will warn you if it can't find Claude Desktop in `/Applications` or `~/Applications`. Download it from <https://claude.ai/download>, install it, then re-run `bash setup.sh` — or just continue setup and install Claude before the final restart step.
+
+**"Cannot reach the internet" (Mac)**
+Setup checks `astral.sh` reachability before installing uv. Connect to Wi-Fi or Ethernet and re-run `bash setup.sh`. Corporate Wi-Fi networks sometimes block `astral.sh` — try a personal hotspot if you hit this on a work network.
+
+**The Client Secret prompt looks frozen (Mac)**
+It isn't — the prompt hides what you type/paste for security. Just paste the secret and press ENTER. You won't see any characters appear, which is normal.
+
 **Port 8080 is already in use** (or `WinError 10013` on Windows)
 Setup will automatically fall back to another port (8090, 8765, 53682, …) if 8080 is taken — common on Windows when WSL or Docker is running. When that happens, the script prints the redirect URI it picked (e.g. `http://localhost:8090/callback`) and waits for you to add it as an **Authorized Redirect URI** in your Zoho client at <https://api-console.zoho.com>. Add it, save, then press ENTER to continue.
 
