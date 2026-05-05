@@ -65,13 +65,15 @@ class ZohoCampaignsAPI:
         except ValueError:
             raise ZohoCampaignsError(f"Non-JSON response ({resp.status_code}): {resp.text[:200]}")
 
-        # Zoho wraps responses — unwrap if needed
+        # Zoho's failure envelopes use either status="error" OR status="failure"
+        # (the docs are inconsistent — updatelistdetails returns "failure",
+        # other endpoints return "error"). Catch both so callers see a clear
+        # message instead of a silently-passed-through failure dict.
         if isinstance(data, dict):
             status = data.get("status", "")
-            if status == "error" or (isinstance(status, str) and status.lower() == "error"):
+            if isinstance(status, str) and status.lower() in ("error", "failure"):
                 msg = data.get("message", data.get("error_description", str(data)))
                 raise ZohoCampaignsError(msg, code=str(data.get("code", "")))
-            # Some endpoints nest under a key — return the full dict for callers to handle
         return data
 
     # ------------------------------------------------------------------
@@ -266,14 +268,20 @@ class ZohoCampaignsAPI:
         if extra_fields:
             contact.update(extra_fields)
 
-        return self._post("listsubscribe", params={
+        # Note: listsubscribe and listunsubscribe REQUIRE "/json/" as a literal
+        # URL path segment (per the Zoho docs sample requests). Sibling write
+        # endpoints like addlistandcontacts and addlistsubscribersinbulk do
+        # NOT — Zoho is inconsistent about this. Without /json/ the endpoint
+        # 404s with "Unable to find the resource".
+        return self._post("json/listsubscribe", params={
             "listkey": listkey,
             "contactinfo": json.dumps(contact),
         })
 
     def unsubscribe_contact(self, listkey: str, email: str) -> Dict:
         """Unsubscribe a contact from a mailing list (POST, all params in query string)."""
-        return self._post("listunsubscribe", params={
+        # See note on listsubscribe — same /json/ path-segment requirement.
+        return self._post("json/listunsubscribe", params={
             "listkey": listkey,
             "contactinfo": json.dumps({"Contact Email": email}),
         })
