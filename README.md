@@ -19,7 +19,7 @@ Once set up, just talk to Claude naturally:
 
 ## Requirements
 
-- A Mac (macOS 10.15 or newer)
+- A Mac (macOS 10.15 or newer) **or** Windows 10/11
 - An internet connection
 - A Zoho Campaigns account (free or paid)
 - Claude Desktop app installed
@@ -30,34 +30,39 @@ That's it. No coding experience needed.
 
 ## Setup — takes about 3 minutes
 
-### Step 1 — Open Terminal
+### Mac users
 
+**Step 1 — Open Terminal**
 Press **Command (⌘) + Space**, type **Terminal**, then press **Enter**.
 
-### Step 2 — Go to this folder
+**Step 2 — Go to this folder**
+Type `cd ` (with a space after), then drag the **zohoMCPCAP** folder from Finder into the Terminal window. Press **Enter**.
 
-In the Terminal window, type `cd ` (with a space after), then drag the **zohoMCPCAP** folder from Finder into the Terminal window. Press **Enter**.
-
-### Step 3 — Run the setup script
-
-Type this and press **Enter**:
-
+**Step 3 — Run the setup script**
 ```
 bash setup.sh
 ```
 
-The script will guide you through everything step by step. It will:
+---
+
+### Windows users
+
+**Step 1 — Right-click `setup.ps1`** in the zohoMCPCAP folder
+
+**Step 2 — Click "Run with PowerShell"**
+
+If you see a blue security warning, click **"Run anyway"** — this is normal for scripts downloaded from the internet.
+
+---
+
+The script (on either platform) will:
 - Install the required software automatically
 - Open your browser to connect your Zoho account
 - Configure Claude Desktop for you
 
-### Step 4 — Restart Claude Desktop
+### Final step (both platforms) — Restart Claude Desktop
 
-Quit Claude Desktop and reopen it.
-
-### Step 5 — Try it
-
-Open a new Claude conversation and type:
+Quit Claude Desktop and reopen it, then open a new conversation and type:
 
 > List my Zoho Campaigns mailing lists
 

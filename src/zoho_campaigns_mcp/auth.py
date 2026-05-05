@@ -55,8 +55,10 @@ class TokenStore:
         TOKEN_DIR.mkdir(parents=True, exist_ok=True)
         with open(TOKEN_FILE, "w") as f:
             json.dump(data, f, indent=2)
-        # Restrict file permissions so only the current user can read it
-        TOKEN_FILE.chmod(0o600)
+        try:
+            TOKEN_FILE.chmod(0o600)  # restrict read access (no-op on Windows)
+        except (AttributeError, NotImplementedError, OSError):
+            pass
 
 
 # ---------------------------------------------------------------------------
