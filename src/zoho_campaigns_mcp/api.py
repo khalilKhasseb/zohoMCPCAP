@@ -60,20 +60,46 @@ class ZohoCampaignsAPI:
         return self._parse(resp)
 
     def _parse(self, resp: requests.Response) -> Dict[str, Any]:
+        body_snippet = (resp.text[:300] or "<empty body>").replace("\n", " ")
+
         try:
             data = resp.json()
         except ValueError:
-            raise ZohoCampaignsError(f"Non-JSON response ({resp.status_code}): {resp.text[:200]}")
+            raise ZohoCampaignsError(
+                f"Non-JSON response (HTTP {resp.status_code}) from "
+                f"{resp.request.method} {resp.url} :: {body_snippet}"
+            )
 
-        # Zoho's failure envelopes use either status="error" OR status="failure"
-        # (the docs are inconsistent — updatelistdetails returns "failure",
-        # other endpoints return "error"). Catch both so callers see a clear
-        # message instead of a silently-passed-through failure dict.
+        # Zoho's failure envelopes are inconsistent across endpoints:
+        #   - status="error" or status="failure"
+        #   - sometimes only `code` is set (non-"0" means failure)
+        #   - sometimes the message is empty even on failure
+        # Surface ALL of these as clean ZohoCampaignsError so callers never
+        # see a silently-passed-through failure dict (which previously
+        # rendered as "empty error" on update_mailing_list).
         if isinstance(data, dict):
-            status = data.get("status", "")
-            if isinstance(status, str) and status.lower() in ("error", "failure"):
-                msg = data.get("message", data.get("error_description", str(data)))
-                raise ZohoCampaignsError(msg, code=str(data.get("code", "")))
+            status_raw = data.get("status")
+            status = status_raw.lower() if isinstance(status_raw, str) else ""
+            code = str(data.get("code", ""))
+            is_failure = (
+                status in ("error", "failure")
+                or (code and code != "0")
+            )
+            if is_failure:
+                msg = (
+                    data.get("message")
+                    or data.get("error_description")
+                    or f"Zoho returned code={code or '?'} status={status_raw or '?'} from "
+                       f"{resp.request.method} {resp.url} :: {body_snippet}"
+                )
+                raise ZohoCampaignsError(msg, code=code)
+
+        if resp.status_code >= 400:
+            raise ZohoCampaignsError(
+                f"HTTP {resp.status_code} from {resp.request.method} "
+                f"{resp.url} :: {body_snippet}"
+            )
+
         return data
 
     # ------------------------------------------------------------------
